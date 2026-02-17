@@ -62,6 +62,9 @@ function getSelectors(platform) {
 // INJECTION LOGIC
 // ─────────────────────────────────────────────
 
+let contextProfile = null;
+let hasInjected = false;
+
 function findInputElement(selectors) {
   let input = document.querySelector(selectors.input);
   if (!input && selectors.inputAlt) {
@@ -71,6 +74,7 @@ function findInputElement(selectors) {
 }
 
 async function injectContext(platform, formattedProfile) {
+  contextProfile = formattedProfile;
   const selectors = getSelectors(platform);
   
   if (!selectors) {
@@ -80,17 +84,35 @@ async function injectContext(platform, formattedProfile) {
   
   let retries = 0;
   
-  const attemptInjection = () => {
+  const setupInjection = () => {
     const input = findInputElement(selectors);
     
     if (input) {
-      console.log('[Context Connector] Input field found, injecting context');
+      console.log('[Context Connector] Input field found, setting up injection listener');
       
-      if (input.tagName === 'TEXTAREA') {
-        injectIntoTextarea(input, formattedProfile);
-      } else {
-        injectIntoContentEditable(input, formattedProfile);
-      }
+      // Wait for user to start typing, then inject
+      const injectOnFirstInput = (e) => {
+        if (hasInjected) return;
+        
+        console.log('[Context Connector] User started typing, injecting context');
+        
+        // Small delay to let the first character appear
+        setTimeout(() => {
+          if (input.tagName === 'TEXTAREA') {
+            injectIntoTextarea(input, contextProfile);
+          } else {
+            injectIntoContentEditable(input, contextProfile);
+          }
+          hasInjected = true;
+        }, 100);
+      };
+      
+      // Listen for focus and first input
+      input.addEventListener('focus', () => {
+        if (!hasInjected) {
+          input.addEventListener('input', injectOnFirstInput, { once: true });
+        }
+      }, { once: true });
       
       return true;
     }
@@ -98,15 +120,15 @@ async function injectContext(platform, formattedProfile) {
     retries++;
     if (retries < CONFIG.MAX_RETRIES) {
       console.log(`[Context Connector] Input not found, retry ${retries}/${CONFIG.MAX_RETRIES}`);
-      setTimeout(attemptInjection, CONFIG.RETRY_INTERVAL);
+      setTimeout(setupInjection, CONFIG.RETRY_INTERVAL);
     } else {
-      console.log('[Context Connector] Max retries reached, injection failed');
+      console.log('[Context Connector] Max retries reached, setup failed');
     }
     
     return false;
   };
   
-  setTimeout(attemptInjection, CONFIG.INJECTION_DELAY);
+  setTimeout(setupInjection, CONFIG.INJECTION_DELAY);
 }
 
 function injectIntoTextarea(textarea, formattedProfile) {
@@ -117,10 +139,15 @@ function injectIntoTextarea(textarea, formattedProfile) {
     return;
   }
   
-  textarea.value = formattedProfile + existingContent;
+  // Prepend context before the user's text
+  textarea.value = formattedProfile + '\n' + existingContent;
   
-  const event = new Event('input', { bubbles: true });
-  textarea.dispatchEvent(event);
+  // Trigger input and change events
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // Move cursor to end
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   
   console.log('[Context Connector] Context injected into textarea');
 }
@@ -133,10 +160,20 @@ function injectIntoContentEditable(element, formattedProfile) {
     return;
   }
   
-  element.innerText = formattedProfile + existingContent;
+  // Prepend context before the user's text
+  element.innerText = formattedProfile + '\n' + existingContent;
   
-  const event = new Event('input', { bubbles: true });
-  element.dispatchEvent(event);
+  // Trigger input and change events
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  // Move cursor to end
+  const range = document.createRange();
+  const sel = window.getSelection();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
   
   console.log('[Context Connector] Context injected into contenteditable');
 }
@@ -146,6 +183,9 @@ function injectIntoContentEditable(element, formattedProfile) {
 // ─────────────────────────────────────────────
 
 async function init() {
+  // Reset injection flag for new page
+  hasInjected = false;
+  
   const platform = detectPlatform();
   
   if (!platform) {
@@ -159,10 +199,10 @@ async function init() {
     { action: 'getFormattedProfile' },
     (response) => {
       if (response && response.formatted) {
-        console.log('[Context Connector] Profile received, starting injection');
+        console.log('[Context Connector] Profile received, setting up injection');
         injectContext(platform, response.formatted);
       } else {
-        console.log('[Context Connector] No profile available yet. Try syncing in the extension popup.');
+        console.log('[Context Connector] No profile available yet.');
       }
     }
   );
