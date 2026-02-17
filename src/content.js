@@ -23,8 +23,15 @@ function detectPlatform() {
 
 let floatingButton = null;
 let contextProfile = null;
+let hasUsedInThisChat = false;
 
 function createFloatingButton() {
+  // Don't show button if already used in this chat
+  if (hasUsedInThisChat) {
+    console.log('[Context Connector] Context already used in this chat, skipping button');
+    return;
+  }
+  
   // Remove existing button if any
   if (floatingButton) {
     floatingButton.remove();
@@ -87,11 +94,17 @@ function createFloatingButton() {
       await navigator.clipboard.writeText(contextProfile);
       showNotification('Context copied! Paste it into your message', 'success');
       
-      // Animate button
-      floatingButton.style.transform = 'scale(0.95)';
+      // Mark as used and hide button
+      hasUsedInThisChat = true;
+      
+      // Animate button out
+      floatingButton.style.animation = 'slideOut 0.3s ease';
       setTimeout(() => {
-        floatingButton.style.transform = 'scale(1)';
-      }, 100);
+        if (floatingButton) {
+          floatingButton.remove();
+          floatingButton = null;
+        }
+      }, 300);
       
     } catch (error) {
       console.error('[Context Connector] Copy failed:', error);
@@ -231,6 +244,9 @@ new MutationObserver(() => {
   if (currentUrl !== lastUrl) {
     lastUrl = currentUrl;
     console.log('[Context Connector] URL changed, recreating button');
+    
+    // Reset the "used" flag for new chat
+    hasUsedInThisChat = false;
     
     // Remove old button
     if (floatingButton) {
