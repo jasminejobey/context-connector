@@ -35,10 +35,5 @@
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }
-  ],
-
-  "action": {
-    "default_popup": "src/popup/popup.html",
-    "default_title": "Context Connector"
-  }
+  ]
 }
