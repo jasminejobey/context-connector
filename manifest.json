@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Context Connector",
+  "version": "1.0.0",
+  "description": "Automatically injects your browsing context into AI chat interfaces.",
+
+  "permissions": [
+    "history",
+    "storage",
+    "alarms"
+  ],
+
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://x.com/i/grok*",
+    "https://gemini.google.com/*"
+  ],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://x.com/i/grok*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Context Connector"
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
