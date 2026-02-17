@@ -1,16 +1,6 @@
 // content.js
 // Runs on Claude, ChatGPT, Grok, and Gemini pages.
-// Injects your browsing context into the chat interface.
-
-// ─────────────────────────────────────────────
-// CONFIGURATION
-// ─────────────────────────────────────────────
-
-const CONFIG = {
-  INJECTION_DELAY: 2000,
-  RETRY_INTERVAL: 1000,
-  MAX_RETRIES: 10
-};
+// Shows a floating button to copy your context to clipboard.
 
 // ─────────────────────────────────────────────
 // PLATFORM DETECTION
@@ -28,154 +18,163 @@ function detectPlatform() {
 }
 
 // ─────────────────────────────────────────────
-// PLATFORM-SPECIFIC SELECTORS
+// FLOATING BUTTON UI
 // ─────────────────────────────────────────────
 
-function getSelectors(platform) {
-  const selectors = {
-    claude: {
-      input: 'div[contenteditable="true"][data-placeholder]',
-      inputAlt: 'fieldset textarea',
-      chatContainer: 'div[role="presentation"]'
-    },
-    chatgpt: {
-      input: 'textarea[data-id]',
-      inputAlt: '#prompt-textarea',
-      chatContainer: 'main'
-    },
-    grok: {
-      input: 'div[contenteditable="true"][role="textbox"]',
-      inputAlt: 'textarea',
-      chatContainer: 'main'
-    },
-    gemini: {
-      input: 'rich-textarea div[contenteditable="true"]',
-      inputAlt: 'textarea[aria-label]',
-      chatContainer: 'main'
-    }
-  };
-  
-  return selectors[platform] || null;
-}
-
-// ─────────────────────────────────────────────
-// INJECTION LOGIC
-// ─────────────────────────────────────────────
-
+let floatingButton = null;
 let contextProfile = null;
-let hasInjected = false;
 
-function findInputElement(selectors) {
-  let input = document.querySelector(selectors.input);
-  if (!input && selectors.inputAlt) {
-    input = document.querySelector(selectors.inputAlt);
+function createFloatingButton() {
+  // Remove existing button if any
+  if (floatingButton) {
+    floatingButton.remove();
   }
-  return input;
+  
+  // Create button container
+  floatingButton = document.createElement('div');
+  floatingButton.id = 'context-connector-button';
+  
+  // Styling
+  floatingButton.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10000;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  `;
+  
+  // Icon + text
+  floatingButton.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+    </svg>
+    <span>Copy Context</span>
+  `;
+  
+  // Hover effect
+  floatingButton.addEventListener('mouseenter', () => {
+    floatingButton.style.transform = 'translateY(-2px)';
+    floatingButton.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.2), 0 3px 6px rgba(0, 0, 0, 0.15)';
+  });
+  
+  floatingButton.addEventListener('mouseleave', () => {
+    floatingButton.style.transform = 'translateY(0)';
+    floatingButton.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1)';
+  });
+  
+  // Click handler
+  floatingButton.addEventListener('click', async () => {
+    if (!contextProfile) {
+      showNotification('No context available yet', 'error');
+      return;
+    }
+    
+    try {
+      await navigator.clipboard.writeText(contextProfile);
+      showNotification('Context copied! Paste it into your message', 'success');
+      
+      // Animate button
+      floatingButton.style.transform = 'scale(0.95)';
+      setTimeout(() => {
+        floatingButton.style.transform = 'scale(1)';
+      }, 100);
+      
+    } catch (error) {
+      console.error('[Context Connector] Copy failed:', error);
+      showNotification('Copy failed. Please try again', 'error');
+    }
+  });
+  
+  // Add to page
+  document.body.appendChild(floatingButton);
+  console.log('[Context Connector] Floating button created');
 }
 
-async function injectContext(platform, formattedProfile) {
-  contextProfile = formattedProfile;
-  const selectors = getSelectors(platform);
+// ─────────────────────────────────────────────
+// NOTIFICATION SYSTEM
+// ─────────────────────────────────────────────
+
+function showNotification(message, type = 'info') {
+  // Remove existing notification if any
+  const existing = document.getElementById('context-connector-notification');
+  if (existing) existing.remove();
   
-  if (!selectors) {
-    console.log('[Context Connector] No selectors for platform:', platform);
-    return;
-  }
+  const notification = document.createElement('div');
+  notification.id = 'context-connector-notification';
   
-  let retries = 0;
-  
-  const setupInjection = () => {
-    const input = findInputElement(selectors);
-    
-    if (input) {
-      console.log('[Context Connector] Input field found, setting up injection listener');
-      
-      // Wait for user to start typing, then inject
-      const injectOnFirstInput = (e) => {
-        if (hasInjected) return;
-        
-        console.log('[Context Connector] User started typing, injecting context');
-        
-        // Small delay to let the first character appear
-        setTimeout(() => {
-          if (input.tagName === 'TEXTAREA') {
-            injectIntoTextarea(input, contextProfile);
-          } else {
-            injectIntoContentEditable(input, contextProfile);
-          }
-          hasInjected = true;
-        }, 100);
-      };
-      
-      // Listen for focus and first input
-      input.addEventListener('focus', () => {
-        if (!hasInjected) {
-          input.addEventListener('input', injectOnFirstInput, { once: true });
-        }
-      }, { once: true });
-      
-      return true;
-    }
-    
-    retries++;
-    if (retries < CONFIG.MAX_RETRIES) {
-      console.log(`[Context Connector] Input not found, retry ${retries}/${CONFIG.MAX_RETRIES}`);
-      setTimeout(setupInjection, CONFIG.RETRY_INTERVAL);
-    } else {
-      console.log('[Context Connector] Max retries reached, setup failed');
-    }
-    
-    return false;
+  const colors = {
+    success: '#10b981',
+    error: '#ef4444',
+    info: '#3b82f6'
   };
   
-  setTimeout(setupInjection, CONFIG.INJECTION_DELAY);
-}
-
-function injectIntoTextarea(textarea, formattedProfile) {
-  const existingContent = textarea.value;
+  notification.style.cssText = `
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 10001;
+    background: ${colors[type]};
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+  `;
   
-  if (existingContent.includes('## Personal Context')) {
-    console.log('[Context Connector] Context already present, skipping injection');
-    return;
+  // Add CSS animation
+  if (!document.getElementById('context-connector-styles')) {
+    const style = document.createElement('style');
+    style.id = 'context-connector-styles';
+    style.textContent = `
+      @keyframes slideIn {
+        from {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @keyframes slideOut {
+        from {
+          transform: translateX(0);
+          opacity: 1;
+        }
+        to {
+          transform: translateX(400px);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
   }
   
-  // Prepend context before the user's text
-  textarea.value = formattedProfile + '\n' + existingContent;
+  notification.textContent = message;
+  document.body.appendChild(notification);
   
-  // Trigger input and change events
-  textarea.dispatchEvent(new Event('input', { bubbles: true }));
-  textarea.dispatchEvent(new Event('change', { bubbles: true }));
-  
-  // Move cursor to end
-  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  
-  console.log('[Context Connector] Context injected into textarea');
-}
-
-function injectIntoContentEditable(element, formattedProfile) {
-  const existingContent = element.innerText || '';
-  
-  if (existingContent.includes('## Personal Context')) {
-    console.log('[Context Connector] Context already present, skipping injection');
-    return;
-  }
-  
-  // Prepend context before the user's text
-  element.innerText = formattedProfile + '\n' + existingContent;
-  
-  // Trigger input and change events
-  element.dispatchEvent(new Event('input', { bubbles: true }));
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-  
-  // Move cursor to end
-  const range = document.createRange();
-  const sel = window.getSelection();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  sel.removeAllRanges();
-  sel.addRange(range);
-  
-  console.log('[Context Connector] Context injected into contenteditable');
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
 }
 
 // ─────────────────────────────────────────────
@@ -183,9 +182,6 @@ function injectIntoContentEditable(element, formattedProfile) {
 // ─────────────────────────────────────────────
 
 async function init() {
-  // Reset injection flag for new page
-  hasInjected = false;
-  
   const platform = detectPlatform();
   
   if (!platform) {
@@ -195,19 +191,33 @@ async function init() {
   
   console.log('[Context Connector] Platform detected:', platform);
   
+  // Request context profile
   chrome.runtime.sendMessage(
     { action: 'getFormattedProfile' },
     (response) => {
       if (response && response.formatted) {
-        console.log('[Context Connector] Profile received, setting up injection');
-        injectContext(platform, response.formatted);
+        contextProfile = response.formatted;
+        console.log('[Context Connector] Profile loaded');
+        
+        // Create the floating button
+        createFloatingButton();
+        
+        // Show welcome notification
+        setTimeout(() => {
+          showNotification('Click the button to copy your context', 'info');
+        }, 1000);
+        
       } else {
-        console.log('[Context Connector] No profile available yet.');
+        console.log('[Context Connector] No profile available yet');
+        
+        // Still show button, but it will show error when clicked
+        createFloatingButton();
       }
     }
   );
 }
 
+// Run initialization
 init();
 
 // ─────────────────────────────────────────────
@@ -220,7 +230,15 @@ new MutationObserver(() => {
   const currentUrl = window.location.href;
   if (currentUrl !== lastUrl) {
     lastUrl = currentUrl;
-    console.log('[Context Connector] URL changed, re-running injection');
-    init();
+    console.log('[Context Connector] URL changed, recreating button');
+    
+    // Remove old button
+    if (floatingButton) {
+      floatingButton.remove();
+      floatingButton = null;
+    }
+    
+    // Reinitialize
+    setTimeout(init, 1000);
   }
 }).observe(document.body, { subtree: true, childList: true });
