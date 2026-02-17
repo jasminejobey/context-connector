@@ -25,10 +25,36 @@ let floatingButton = null;
 let contextProfile = null;
 let hasUsedInThisChat = false;
 
+function conversationHasMessages() {
+  // Check if there are any message bubbles in the conversation
+  // Different selectors for different platforms
+  const platform = detectPlatform();
+  
+  const messageSelectors = {
+    claude: '[data-test-render-count]', // Claude's message containers
+    chatgpt: '[data-message-author-role]', // ChatGPT messages
+    grok: '[data-testid="tweet"]', // Grok messages
+    gemini: '.model-response-text' // Gemini messages
+  };
+  
+  const selector = messageSelectors[platform];
+  if (!selector) return false;
+  
+  const messages = document.querySelectorAll(selector);
+  return messages.length > 0;
+}
+
 function createFloatingButton() {
   // Don't show button if already used in this chat
   if (hasUsedInThisChat) {
     console.log('[Context Connector] Context already used in this chat, skipping button');
+    return;
+  }
+  
+  // Don't show button if conversation already has messages
+  if (conversationHasMessages()) {
+    console.log('[Context Connector] Conversation already has messages, skipping button');
+    hasUsedInThisChat = true; // Mark as used so it doesn't reappear
     return;
   }
   
