@@ -234,6 +234,11 @@ async function init() {
   chrome.runtime.sendMessage(
     { action: 'getFormattedProfile' },
     (response) => {
+      if (chrome.runtime.lastError) {
+        console.log('[Context Connector] Error communicating with background script');
+        return;
+      }
+      
       if (response && response.formatted) {
         contextProfile = response.formatted;
         console.log('[Context Connector] Profile loaded');
