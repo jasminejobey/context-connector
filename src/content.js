@@ -44,7 +44,7 @@ function createFloatingButton() {
   // Styling
   floatingButton.style.cssText = `
     position: fixed;
-    bottom: 24px;
+    bottom: 80px;
     right: 24px;
     z-index: 10000;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
